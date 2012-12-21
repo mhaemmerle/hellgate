@@ -1,0 +1,23 @@
+(defproject hellgate "0.1.0-SNAPSHOT"
+  :dependencies [[com.adobe.blazeds/blazeds-core "4.0.0.14931"]
+                 [com.adobe.blazeds/blazeds-common "4.0.0.14931"]
+                 [com.adobe.blazeds/blazeds-remoting "4.0.0.14931"]
+                 [org.clojure/clojure "1.4.0"]
+                 [org.slf4j/slf4j-api "1.6.6"]
+                 [org.slf4j/slf4j-log4j12 "1.6.6"]
+                 [org.clojure/tools.logging "0.2.3"]
+                 [org.clojure/tools.cli "0.2.1"]
+                 [aleph "0.3.0-beta6"]
+                 [ring "1.1.1"]
+                 [compojure "1.1.1"]
+                 [ring-json-params "0.1.3"]
+                 [camel-snake-kebab "0.1.0-SNAPSHOT"]
+                 [com.spoon16/clj-gson "0.0.1"]
+                 [com.google.code.gson/gson "2.2.2"]]
+  :dev-dependencies [[criterium "0.2.1"]]
+  :plugins [[lein-marginalia "0.7.1"]]
+  :repositories [["springflex" {:url "https://src.springsource.org/svn/spring-flex/tags/spring-flex-1.5.0.RELEASE/local-repo/"
+                                :checksum :ignore}]]
+  :source-paths ["src/clj"]
+  :java-source-paths ["src/java"]
+  :main hellgate.core)
