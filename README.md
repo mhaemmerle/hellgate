@@ -2,8 +2,8 @@ proof of concept.
 
 https://github.com/technomancy/leiningen
 
-lein deps
-lein run
+  $ lein deps
+  $ lein run
 
 ## License
 
