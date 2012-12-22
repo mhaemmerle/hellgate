@@ -92,13 +92,12 @@
    :serialization-context (get-serialization-context)})
 
 (defn add-response-message!
-  [response-context ^flex.messaging.messages.Message request-message data]
-  (let [response-counter 0
-        target-uri (str "/" response-counter "/onResult")
+  [response-context ^MessageBody request-message-body response-data]
+  (let [target-uri (str (.getResponseURI request-message-body) "/onResult")
         response-uri nil
         response-message (doto (AcknowledgeMessage.)
-                           (.setBody data)
-                           (.setCorrelationId (.getMessageId request-message))
+                           (.setBody response-data)
+                           (.setCorrelationId (.getMessageId (.getData request-message-body)))
                            (.setTimestamp 0)
                            (.setTimeToLive 0))
         message-body (MessageBody. target-uri response-uri response-message)]
@@ -106,15 +105,14 @@
   response-context)
 
 (defn build-simple-action-message
-  [json]
+  [^MessageBody request-message-body json]
   (let [response-message (j/deserialize json)
         ;; action-context (ActionContext.)
         serialization-context (get-serialization-context)
-        response-counter 0
-        response-uri nil
         action-message (ActionMessage. 3)
-        command (str "/" response-counter "/onResult")
-        message-body (MessageBody. command response-uri response-message)]
+        target-uri (str (.getResponseURI request-message-body) "/onResult")
+        response-uri nil
+        message-body (MessageBody. target-uri response-uri response-message)]
     (.addBody action-message message-body)
     ;; (.setRequestMessage action-context request-message)
     (serialize serialization-context action-message)))

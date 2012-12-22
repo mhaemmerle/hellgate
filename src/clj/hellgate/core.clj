@@ -4,7 +4,6 @@
 ;; more idiomatic handling of state "(with-..."
 ;; try to build service url through targetURI
 ;; eg. UsersController.get_or_create_user -> /users/get_or_create_users
-;; lookup table to let certain requests pass through unharmed
 
 (ns hellgate.core
   (:gen-class)
@@ -16,6 +15,7 @@
         compojure.core)
   (:require [clojure.tools.logging :as log]
             [clojure.java.io :as io]
+            [clojure.string :as string]
             [compojure.route :as route]
             [hellgate.json :as j]
             [hellgate.amf :as amf]
@@ -41,11 +41,24 @@
 (def remote-default-port 3000)
 (def remote-default-host "http://localhost")
 
+(def pass-through-services (atom #{}))
+
 (def aleph-stop (atom nil))
 
 (def build-service-url (memoize
                         (fn [resource]
                           (str remote-default-host ":" remote-default-port "/" resource))))
+
+(defn amf-uri-to-resource-uri
+  [amf-uri]
+  (let [[amf-source operation] (string/split amf-uri #"\.")
+        source (first (string/split amf-source #"Controller"))]
+    (log/info amf-source source operation)
+    (str (->snake_case source) "/" operation)))
+
+(defn register-for-pass-through
+  [service]
+  (swap! pass-through-services conj service))
 
 (defn- wrap-bounce-favicon [handler]
   (fn [req]
@@ -71,9 +84,8 @@
   "Handles simple AMF messages that consist of a single message body and are of
    no specific type."
   [request-channel ^MessageBody message-body]
-  (log/info "handle-simple-message")
   (let [target-uri (.getTargetURI message-body)
-        remote-uri (config/get-remote-service-uri target-uri)
+        remote-uri (amf-uri-to-resource-uri target-uri)
         service-url (build-service-url remote-uri)
         content (.getData message-body)
         serialized-content (j/serialize content)
@@ -86,22 +98,24 @@
        (let [json (bytes->string (:body remote-response))
              response {:status 200
                        :headers amf/amf-default-headers
-                       :body (amf/build-simple-action-message json)}]
+                       :body (amf/build-simple-action-message message-body json)}]
          (enqueue request-channel response))))))
 
 (defn handle-command-message
-  [response-context ^CommandMessage message]
-  (amf/add-response-message! response-context message nil))
+  [response-context request-message-body]
+  (amf/add-response-message! response-context request-message-body nil))
 
 (defn handle-acknowledge-message
-  [response-context ^AcknowledgeMessage message]
-  (amf/add-response-message! response-context message nil))
+  [response-context request-message-body]
+  (amf/add-response-message! response-context request-message-body nil))
 
 (defn handle-remoting-message
-  [response-context ^RemotingMessage message]
-  (let [source (.getSource message)
+  [response-context ^MessageBody request-message-body]
+  (let [^RemotingMessage message (.getData request-message-body)
+        source (.getSource message)
         operation (.getOperation message)
-        remote-uri (config/get-remote-service-uri (str source "." operation))
+        controller-name (->snake_case (first (string/split source #"Controller")))
+        remote-uri (str controller-name "/" operation)
         service-url (build-service-url remote-uri)
         serialized-body (j/serialize (.getBody message))
         request {:method :post, :url service-url :body serialized-body}]
@@ -109,13 +123,12 @@
      request
      {:error-handler (fn [error] (log/info "remoting_pipeline_error" error))}
      #(http-request %)
-     #(amf/add-response-message! response-context message %))))
+     #(amf/add-response-message! response-context request-message-body %))))
 
 (defn handle-complex-messages
   "Handles typed AMF messages that need responses according to the FLEX messaging
    implementation. It is possible that there is more than just message body."
   [request-channel message-bodies]
-  (log/info "handle-complex-message")
   (run-pipeline
    (amf/get-response-context)
    {:error-handler (fn [error] (log/info "pipeline_error" error))}
@@ -139,22 +152,19 @@
                                  :headers amf/amf-default-headers
                                  :body response})))))
 
-;; pass-through messages should go to original amf endpoint
-;; headers must be intact, so a merge is in order
-(def pass-through
-  ;; "UsersController.get_or_create_user"
-  #{})
-
 (defn is-pass-through?
   [target]
-  (if (contains? pass-through target)
+  (if (contains? pass-through-services target)
     true
     false))
 
 (defn do-pass-through
+  ;; Pass-through messages should go to original amf endpoint (RubyAMF) and
+  ;; HTTP headers must be kepts intact.
   [request-channel payload]
   (log/info "do-pass-through")
   (let [service-url (build-service-url "amf")
+        ;; TODO merge HTTP headers
         request {:method :post, :url service-url :body payload}]
     (run-pipeline
      request
@@ -176,11 +186,11 @@
     (if (nil? target-uri)
       (let [data ^Message (.getData first-message-body)]
         (if (and (instance? RemotingMessage data)
-                 (contains? pass-through (str (.getSource ^RemotingMessage data) "."
-                                              (.getOperation ^RemotingMessage data))))
+                 (contains? pass-through-services (str (.getSource ^RemotingMessage data) "."
+                                                       (.getOperation ^RemotingMessage data))))
           (do-pass-through request-channel request-body)
           (handle-complex-messages request-channel message-bodies)))
-      (if (contains? pass-through target-uri)
+      (if (contains? pass-through-services target-uri)
         (do-pass-through request-channel request-body)
         (handle-simple-message request-channel first-message-body)))))
 

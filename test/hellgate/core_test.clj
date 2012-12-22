@@ -48,27 +48,38 @@
                   (.setUserId 456)
                   (.setBar (doto (ClientBar.)
                              (.setId 789))))]
-    (let [result (do-amf-call "FooController.foo" [message])]
+    (let [result (do-amf-call "FooBarController.baz" [message])]
       (log/info "result" result)
       (is (.getId result) id)
       (is (.getMessage result) message)))
   (stop-server))
 
+(deftest let-configured-messages-pass-through
+  (let [pass-through-get-or-create "UsersController.get_or_create_user"]
+    (register-for-pass-through pass-through-get-or-create)
+
+    ))
+
 (deftest receive-remoting-message
+  (testing "receive remoting blub"
+    (is (= 1 1)))
   )
 
 (deftest build-batched-request
   (j/register-forward-aliases forward-alias-config)
   (let [response-context (amf/get-response-context)
-        message-body (doto (ClientFoo.)
+        message-data (doto (ClientFoo.)
                        (.setId 123)
                        (.setUserId 456)
                        (.setBar (doto (ClientBar.)
                                   (.setId 789))))
         request-message (proxy [flex.messaging.messages.RemotingMessage] []
-                          (getMessageId [] "123"))]
+                          (getMessageId [] "123"))
+        request-message-body (proxy [flex.messaging.io.amf.MessageBody] []
+                               (getResponseURI [] "/0")
+                               (getData [] request-message))]
     (dotimes [n 3]
-      (amf/add-response-message! response-context request-message message-body))
+      (amf/add-response-message! response-context request-message-body message-data))
     (let [byte-array (amf/serialize (:serialization-context response-context)
                                     (:action-message response-context))]
       (with-open [w (clojure.java.io/output-stream "debug.amf")]
@@ -82,8 +93,11 @@
                        (.setBar (doto (ClientBar.)
                                   (.setId 789))))
         request-message (proxy [flex.messaging.messages.RemotingMessage] []
-                          (getMessageId [] "123"))]
-    (amf/add-response-message! response-context request-message message-body)
+                          (getMessageId [] "123"))
+        request-message-body (proxy [flex.messaging.io.amf.MessageBody] []
+                               (getResponseURI [] "/0")
+                               (getData [] request-message))]
+    (amf/add-response-message! response-context request-message-body message-body)
     ;; (let [byte-array (amf/serialize (:serialization-context response-context)
     ;;                                 (:action-message response-context))]
     ;;   (with-open [w (clojure.java.io/output-stream "debug.amf")]
