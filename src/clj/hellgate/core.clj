@@ -1,7 +1,10 @@
-;; - move most of core ns into gateway ns
-;; - more front-to-back tests
-;; - error handling in general should be better
-;; - more idiomatic handling of state "(with-..."
+;; move most of core ns into gateway ns
+;; more front-to-back tests
+;; error handling in general should be better
+;; more idiomatic handling of state "(with-..."
+;; try to build service url through targetURI
+;; eg. UsersController.get_or_create_user -> /users/get_or_create_users
+;; lookup table to let certain requests pass through unharmed
 
 (ns hellgate.core
   (:gen-class)
@@ -17,7 +20,8 @@
             [hellgate.json :as j]
             [hellgate.amf :as amf]
             [hellgate.config :as config])
-  (:import [flex.messaging.messages AcknowledgeMessage CommandMessage RemotingMessage]
+  (:import [flex.messaging.messages AcknowledgeMessage CommandMessage RemotingMessage
+            Message]
            [flex.messaging.io.amf ActionMessage MessageBody]
            flex.messaging.io.amf.client.AMFConnection
            [flex.messaging.io.amf.client.exceptions ClientStatusException
@@ -40,8 +44,8 @@
 (def aleph-stop (atom nil))
 
 (def build-service-url (memoize
-                        (fn [host port resource]
-                          (str host ":" port "/" resource))))
+                        (fn [resource]
+                          (str remote-default-host ":" remote-default-port "/" resource))))
 
 (defn- wrap-bounce-favicon [handler]
   (fn [req]
@@ -70,14 +74,10 @@
   (log/info "handle-simple-message")
   (let [target-uri (.getTargetURI message-body)
         remote-uri (config/get-remote-service-uri target-uri)
-        ;; TODO get host and port from config/bindings
-        service-url (build-service-url remote-default-host
-                                       remote-default-port
-                                       remote-uri)
+        service-url (build-service-url remote-uri)
         content (.getData message-body)
         serialized-content (j/serialize content)
         request {:method :post, :url service-url :body serialized-content}]
-    
     (run-pipeline
      request
      {:error-handler (fn [error] (log/info "pipeline_error" error))}
@@ -102,13 +102,9 @@
   (let [source (.getSource message)
         operation (.getOperation message)
         remote-uri (config/get-remote-service-uri (str source "." operation))
-        ;; TODO get host and port from config/bindings
-        service-url (build-service-url remote-default-host
-                                       remote-default-port
-                                       remote-uri)
+        service-url (build-service-url remote-uri)
         serialized-body (j/serialize (.getBody message))
         request {:method :post, :url service-url :body serialized-body}]
-
     (run-pipeline
      request
      {:error-handler (fn [error] (log/info "remoting_pipeline_error" error))}
@@ -143,14 +139,50 @@
                                  :headers amf/amf-default-headers
                                  :body response})))))
 
+;; pass-through messages should go to original amf endpoint
+;; headers must be intact, so a merge is in order
+(def pass-through
+  ;; "UsersController.get_or_create_user"
+  #{})
+
+(defn is-pass-through?
+  [target]
+  (if (contains? pass-through target)
+    true
+    false))
+
+(defn do-pass-through
+  [request-channel payload]
+  (log/info "do-pass-through")
+  (let [service-url (build-service-url "amf")
+        request {:method :post, :url service-url :body payload}]
+    (run-pipeline
+     request
+     {:error-handler (fn [error] (log/info "pipeline_error" error))}
+     #(http-request %)
+     (fn [remote-response]
+       (let [response {:status 200
+                       :headers amf/amf-default-headers
+                       :body (:body remote-response)}]
+         (enqueue request-channel response))))))
+
 (defn amf-handler
   [request-channel request]
-   (let [^ActionMessage request-message (amf/deserialize (:body request))
-         message-bodies (.getBodies request-message)
-         ^MessageBody message-body (first message-bodies)]
-     (if (not (nil? (.getTargetURI message-body)))
-       (handle-simple-message request-channel message-body)
-       (handle-complex-messages request-channel message-bodies))))
+  (let [request-body (:body request)
+        ^ActionMessage request-message (amf/deserialize request-body)
+        message-bodies (.getBodies request-message)
+        ^MessageBody first-message-body (first message-bodies)
+        target-uri (.getTargetURI first-message-body)]
+    (if (nil? target-uri)
+      (let [data ^Message (.getData first-message-body)]
+        (if (and (instance? RemotingMessage data)
+                 (contains? pass-through (str (.getSource ^RemotingMessage data) "."
+                                              (.getOperation ^RemotingMessage data))))
+          (do-pass-through request-channel request-body)
+          (handle-complex-messages request-channel message-bodies)))
+      (if (contains? pass-through target-uri)
+        (do-pass-through request-channel request-body)
+        (handle-simple-message request-channel first-message-body)))))
 
 (def handlers
   (routes
