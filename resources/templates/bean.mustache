@@ -1,0 +1,20 @@
+package {{package}};
+
+public class {{simple-name}} implements java.io.serializable {
+    {{#fields}}
+    private {{type}} {{name}};
+    {{/fields}}
+    
+    public {{simple-name}}() {}
+
+    {{#getter-setter}}
+    public {{type}} {{getter}}() {
+        return this.{{name}};
+    }
+
+    public void {{setter}}({{type}} {{name}}) {
+        this.{{name}} = {{name}};
+    }
+
+    {{/getter-setter}}
+}

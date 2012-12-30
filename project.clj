@@ -11,7 +11,8 @@
                  [ring "1.1.1"]
                  [compojure "1.1.1"]
                  [camel-snake-kebab "0.1.0-SNAPSHOT"]
-                 [com.google.code.gson/gson "2.2.2"]]
+                 [com.google.code.gson/gson "2.2.2"]
+                 [de.ubercode.clostache/clostache "1.3.1"]]
   :dev-dependencies [[criterium "0.2.1"]]
   :plugins [[lein-marginalia "0.7.1"]]
   :repositories [["springflex" {:url "https://src.springsource.org/svn/spring-flex/tags/spring-flex-1.5.0.RELEASE/local-repo/"

@@ -97,7 +97,8 @@
         response-uri nil
         response-message (doto (AcknowledgeMessage.)
                            (.setBody response-data)
-                           (.setCorrelationId (.getMessageId (.getData request-message-body)))
+                           (.setCorrelationId (.getMessageId
+                                               (.getData request-message-body)))
                            (.setTimestamp 0)
                            (.setTimeToLive 0))
         message-body (MessageBody. target-uri response-uri response-message)]
