@@ -5,6 +5,8 @@
             [clostache.parser :as parser])
   (:import [java.io PushbackReader]))
 
+;; FIXME currently depends on existing "tmp" directory
+;; TODO generate directory structure for packages
 (defn generate-bean
   [definition]
   (let [split-path (clojure.string/split (:class-name definition) #"\.")
