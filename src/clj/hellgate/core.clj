@@ -2,8 +2,6 @@
 ;; more front-to-back tests
 ;; error handling in general should be better
 ;; more idiomatic handling of state "(with-..."
-;; try to build service url through targetURI
-;; eg. UsersController.get_or_create_user -> /users/get_or_create_users
 
 (ns hellgate.core
   (:gen-class)
@@ -47,7 +45,9 @@
 
 (def build-service-url (memoize
                         (fn [resource]
-                          (str remote-default-host ":" remote-default-port "/" resource))))
+                          (str remote-default-host ":"
+                               remote-default-port "/"
+                               resource))))
 
 (defn amf-uri-to-resource-uri
   [amf-uri]
@@ -186,8 +186,9 @@
     (if (nil? target-uri)
       (let [data ^Message (.getData first-message-body)]
         (if (and (instance? RemotingMessage data)
-                 (contains? pass-through-services (str (.getSource ^RemotingMessage data) "."
-                                                       (.getOperation ^RemotingMessage data))))
+                 (contains? pass-through-services
+                            (str (.getSource ^RemotingMessage data) "."
+                                 (.getOperation ^RemotingMessage data))))
           (do-pass-through request-channel request-body)
           (handle-complex-messages request-channel message-bodies)))
       (if (contains? pass-through-services target-uri)
